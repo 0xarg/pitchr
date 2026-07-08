@@ -5,9 +5,10 @@ import { PDFParse } from "pdf-parse";
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const form = await req.formData();
+  console.log(form);
 
   try {
-    const resume = form.get("resume") as File;
+    const resume = form.get("file") as File;
 
     const rsBuf = await resume.arrayBuffer();
     const buff = Buffer.from(rsBuf);

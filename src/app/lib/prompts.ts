@@ -1,0 +1,2 @@
+export const prompt1 =
+  "You are a Senior CV specialist and Job Proposal writer, I am sharing my resume and job description, You have to write a proposal for me which I can copy paste as text, I am applying for this job on Upwork as a freelancer, So please write in the upwork standards, It should be AI prone, Which I mean that if any tool used, this proposal should be flagged as human written,  and Job description: ";

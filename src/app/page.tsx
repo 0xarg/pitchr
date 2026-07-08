@@ -1,6 +1,58 @@
+"use client";
 import Image from "next/image";
+import React, { useRef, useState } from "react";
+import { uploadFile } from "./lib/action";
+import axios from "axios";
 
 export default function Home() {
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const jd = useRef<HTMLTextAreaElement>(null);
+  const [status, setStatus] = useState("");
+  const [jobd, setJD] = useState("");
+  const [prop, setProp] = useState("");
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setSelectedFile(e.target.files[0]);
+      setStatus(`File Selected: ${e.target.files[0].name}`);
+    }
+  };
+
+  const handleJDChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setJD(e.target.value);
+    console.log(jobd);
+  };
+
+  const getProp = async () => {
+    const formData = new FormData();
+    formData.append("jd", jobd);
+    formData.append("resumeId", "4");
+    console.log(formData);
+    const res = await axios.post("/api/proposal", formData);
+    setProp(res.data.proposal);
+  };
+
+  const uploadFile = async () => {
+    if (!selectedFile) {
+      setStatus("No selected File");
+      return;
+    }
+
+    setStatus("Uploading");
+    const formData = new FormData();
+    formData.append("file", selectedFile);
+    console.log(formData);
+    const res = await axios.post("/api/upload", formData, {});
+
+    if (res.status === 200) {
+      setStatus("Uploaded");
+      console.log(res.data);
+      return;
+    }
+    setStatus("Failed in uploading the resume");
+    console.log(res.data);
+    return;
+  };
   return (
     <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
       <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
@@ -14,10 +66,9 @@ export default function Home() {
         />
         <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
           <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+            Lets Get Started with getting Best Proposals
           </h1>
           <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
             <a
               href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
               className="font-medium text-zinc-950 dark:text-zinc-50"
@@ -35,11 +86,9 @@ export default function Home() {
           </p>
         </div>
         <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
+          <button
+            onClick={uploadFile}
             className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
           >
             <Image
               className="dark:invert"
@@ -48,16 +97,34 @@ export default function Home() {
               width={16}
               height={16}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            Upload Resume
+          </button>
+          {status}
+          <input
+            className="border-2 border-white"
+            onChange={handleFileChange}
+            type="file"
+          ></input>
+          <button
+            onClick={getProp}
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
           >
-            Documentation
-          </a>
+            <Image
+              className="dark:invert"
+              src="/vercel.svg"
+              alt="Vercel logomark"
+              width={16}
+              height={16}
+            />
+            Get Proposal
+          </button>
+          <textarea
+            className="border-white border-2"
+            ref={jd}
+            onChange={handleJDChange}
+          />
+
+          <h1>Proposal: {prop}</h1>
         </div>
       </main>
     </div>
