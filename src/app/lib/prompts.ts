@@ -53,10 +53,33 @@ Write it to be spoken: short sentences, contractions, conversational rhythm.
 
 ${STYLE_RULES}`;
 
-export function buildUserMessage(resume: string, jd: string, notes?: string) {
+// Appended to the system prompt depending on the "Include my links" toggle.
+export const LINK_RULES = {
+  proposal: `Links: the freelancer's links are in <links>, each with a note on what it shows.
+- Pick at most 2 links that directly support THIS job (e.g. a similar project). If none clearly fit, include none.
+- A portfolio or GitHub link is fine as a general fallback only when the job asks for samples or past work.
+- Place each link naturally next to the proof it backs up, as a plain URL. Never invent or modify URLs.`,
+  loom: `Links: the freelancer's links are in <links>, each with a note on what it shows.
+- Don't read URLs aloud. Instead, where a relevant project would help, add an on-screen cue like [show: <label>].
+- Use at most 2, only if they directly support this job.`,
+  none: `Do not include any URLs or links, even if the resume contains them.`,
+};
+
+export function buildUserMessage(
+  resume: string,
+  jd: string,
+  notes?: string,
+  links?: { label: string; url: string; note: string }[],
+) {
   let msg = `<resume>\n${resume}\n</resume>\n\n<job>\n${jd}\n</job>`;
   if (notes?.trim()) {
     msg += `\n\n<notes>\n${notes.trim()}\n</notes>`;
+  }
+  if (links?.length) {
+    const list = links
+      .map((l) => `- ${l.label}: ${l.url}${l.note ? ` (${l.note})` : ""}`)
+      .join("\n");
+    msg += `\n\n<links>\n${list}\n</links>`;
   }
   return msg;
 }
