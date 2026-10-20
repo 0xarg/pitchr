@@ -1,60 +1,89 @@
 import { createClient } from "@/lib/supabase/server";
 import { OpenRouter } from "@openrouter/sdk";
 import { NextRequest, NextResponse } from "next/server";
-import { PDFParse } from "pdf-parse";
-import { prompt1 } from "../../lib/prompts";
+import {
+  buildUserMessage,
+  LOOM_SYSTEM,
+  PROPOSAL_SYSTEM,
+} from "../../lib/prompts";
+
+const MODEL = "anthropic/claude-sonnet-5.5";
+
+const SYSTEM_PROMPTS = {
+  proposal: PROPOSAL_SYSTEM,
+  loom: LOOM_SYSTEM,
+} as const;
+
+type GenerateType = keyof typeof SYSTEM_PROMPTS;
 
 export async function POST(req: NextRequest) {
-  const supabase = await createClient();
-  const form = await req.formData();
-
-  const jd = form.get("jd") as string;
-  const resumeId = form.get("resumeId") as string;
-
   try {
+    const body = await req.json().catch(() => null);
+    const jd = typeof body?.jd === "string" ? body.jd.trim() : "";
+    const notes = typeof body?.notes === "string" ? body.notes : undefined;
+    const resumeId = Number(body?.resumeId);
+    const type = body?.type as GenerateType;
+
+    if (!jd) {
+      return NextResponse.json(
+        { error: "Job description is required" },
+        { status: 400 },
+      );
+    }
+    if (!Number.isInteger(resumeId)) {
+      return NextResponse.json(
+        { error: "Upload a resume first" },
+        { status: 400 },
+      );
+    }
+    if (!(type in SYSTEM_PROMPTS)) {
+      return NextResponse.json(
+        { error: "type must be 'proposal' or 'loom'" },
+        { status: 400 },
+      );
+    }
+
+    const supabase = await createClient();
     const { data, error } = await supabase
       .from("resume")
-      .select("*")
-      .eq("id", parseInt(resumeId))
+      .select("text")
+      .eq("id", resumeId)
       .single();
 
-    console.log(data);
     if (error) {
-      throw error;
+      throw new Error(error.message);
     }
-    const resumeTxt = data.text;
+
     const client = new OpenRouter({
       apiKey: process.env.OPENROUTER_API_KEY,
     });
 
-    const prompt = `${prompt1} + . This is the Resume:${resumeTxt} & This is the Job Description: ${jd}`;
-    console.log(prompt);
-
     const completion = await client.chat.send({
       chatRequest: {
-        model: "openai/gpt-4o",
+        model: MODEL,
+        maxTokens: 4096,
         messages: [
-          {
-            role: "user",
-            content: prompt,
-          },
+          { role: "system", content: SYSTEM_PROMPTS[type] },
+          { role: "user", content: buildUserMessage(data.text, jd, notes) },
         ],
       },
     });
 
-    const proposal = completion.choices[0].message.content;
-    return NextResponse.json(
-      {
-        proposal,
-      },
-      { status: 200 },
-    );
+    const content = completion.choices[0]?.message.content;
+    const text =
+      typeof content === "string"
+        ? content
+        : Array.isArray(content)
+          ? content.map((part) => ("text" in part ? part.text : "")).join("")
+          : "";
+
+    if (!text.trim()) {
+      throw new Error("The model returned an empty response");
+    }
+    return NextResponse.json({ text: text.trim() });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error,
-      },
-      { status: 500 },
-    );
+    const message =
+      error instanceof Error ? error.message : "Generation failed";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

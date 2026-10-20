@@ -2,38 +2,58 @@ import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 import { PDFParse } from "pdf-parse";
 
+const MAX_SIZE = 5 * 1024 * 1024;
+
 export async function POST(req: NextRequest) {
-  const supabase = await createClient();
-  const form = await req.formData();
-  console.log(form);
-
   try {
-    const resume = form.get("file") as File;
+    const form = await req.formData();
+    const resume = form.get("file");
 
-    const rsBuf = await resume.arrayBuffer();
-    const buff = Buffer.from(rsBuf);
+    if (!(resume instanceof File)) {
+      return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
+    }
+    if (resume.type !== "application/pdf") {
+      return NextResponse.json(
+        { error: "Resume must be a PDF" },
+        { status: 400 },
+      );
+    }
+    if (resume.size > MAX_SIZE) {
+      return NextResponse.json(
+        { error: "PDF must be 5MB or smaller" },
+        { status: 400 },
+      );
+    }
 
+    const buff = Buffer.from(await resume.arrayBuffer());
     const parser = new PDFParse({ data: buff });
-
     const res = await parser.getText();
-    const resumeText = res.text;
+    await parser.destroy();
+    const resumeText = res.text.trim();
 
+    if (!resumeText) {
+      return NextResponse.json(
+        { error: "Couldn't read any text from this PDF" },
+        { status: 400 },
+      );
+    }
+
+    const supabase = await createClient();
     const { data, error } = await supabase
       .from("resume")
-      .insert({
-        text: resumeText,
-      })
+      .insert({ text: resumeText })
       .select("id")
       .single();
 
     if (error) {
-      throw error;
+      throw new Error(error.message);
     }
-    return NextResponse.json(
-      { message: `Resume Uploaded with id: ${data.id}` },
-      { status: 200 },
-    );
+    return NextResponse.json({
+      id: data.id,
+      preview: resumeText.slice(0, 200),
+    });
   } catch (error) {
-    return NextResponse.json({ error }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Upload failed";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
