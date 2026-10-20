@@ -1,6 +1,7 @@
-"use client";
-import React, { useEffect, useRef, useState } from "react";
-import { ThemeToggle } from "./components/ThemeToggle";
+import { getUser } from "@/lib/supabase/auth";
+import { createClient } from "@/lib/supabase/server";
+import Link from "next/link";
+import { navGhost, navPrimary, SiteNav } from "./components/SiteNav";
 import {
   CheckIcon,
   CopyIcon,
@@ -8,483 +9,277 @@ import {
   PenIcon,
   RefreshIcon,
   SparkIcon,
-  UploadIcon,
   VideoIcon,
 } from "./components/icons";
 
-type ResumeInfo = { id: number; preview: string };
-type OutputType = "proposal" | "loom";
-type Output = { text: string; loading: boolean; error: string };
-
-const OUTPUTS: Record<
-  OutputType,
-  { label: string; hint: string; Icon: typeof PenIcon }
-> = {
-  proposal: {
-    label: "Proposal",
-    hint: "Paste-ready for Upwork",
+const FEATURES = [
+  {
     Icon: PenIcon,
+    title: "Hooks that diagnose",
+    body: "Opens with the likely cause of the client's problem and how you'd fix it, so the preview line already proves you get it.",
   },
-  loom: { label: "Loom script", hint: "60-90s video", Icon: VideoIcon },
-};
-const TYPES = Object.keys(OUTPUTS) as OutputType[];
+  {
+    Icon: VideoIcon,
+    title: "Loom scripts",
+    body: "A 60-90 second video script with timestamps and on-screen cues, ready to record and attach.",
+  },
+  {
+    Icon: FileIcon,
+    title: "Only your real experience",
+    body: "Proof points come from your resume. No invented clients, numbers or tools.",
+  },
+  {
+    Icon: CheckIcon,
+    title: "No AI tells",
+    body: "No “Dear Hiring Manager”, no “I'm thrilled to apply”, no em-dashes. Reads like a busy expert wrote it.",
+  },
+  {
+    Icon: RefreshIcon,
+    title: "Regenerate either one",
+    body: "Not quite right? Rewrite just the proposal or just the script, without losing the other.",
+  },
+  {
+    Icon: CopyIcon,
+    title: "Paste-ready",
+    body: "Plain text that drops straight into Upwork. One click to copy.",
+  },
+];
 
-const EMPTY_OUTPUT: Output = { text: "", loading: false, error: "" };
-
-async function readJson(res: Response) {
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(data.error || `Request failed (${res.status})`);
-  }
-  return data;
-}
-
-function wordCount(text: string) {
-  return text.trim() ? text.trim().split(/\s+/).length : 0;
-}
+const STEPS = [
+  {
+    n: "01",
+    title: "Upload your resume",
+    body: "Once. Pitchr keeps it on file for every job after.",
+  },
+  {
+    n: "02",
+    title: "Paste the job post",
+    body: "Add notes like the client's name, your rate or portfolio links.",
+  },
+  {
+    n: "03",
+    title: "Copy and send",
+    body: "Get a proposal and a Loom script in seconds. Tweak, copy, apply.",
+  },
+];
 
 const card =
-  "rounded-3xl border border-zinc-200/80 bg-white/70 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-12px_rgba(0,0,0,0.08)] backdrop-blur-xl dark:border-white/[0.08] dark:bg-white/[0.03] dark:shadow-none";
-const field =
-  "w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-[15px] leading-relaxed text-zinc-900 placeholder:text-zinc-400 outline-none transition focus:border-zinc-400 focus:ring-4 focus:ring-zinc-900/5 dark:border-white/10 dark:bg-black/30 dark:text-zinc-100 dark:placeholder:text-zinc-600 dark:focus:border-white/30 dark:focus:ring-white/5";
-const ghostBtn =
-  "inline-flex h-8 items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-700 transition hover:border-zinc-300 hover:bg-zinc-50 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 dark:border-white/10 dark:bg-white/5 dark:text-zinc-300 dark:hover:bg-white/10";
+  "rounded-3xl border border-zinc-200/80 bg-white/70 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-12px_rgba(0,0,0,0.08)] dark:border-white/[0.08] dark:bg-white/[0.03] dark:shadow-none";
 
-// Renders model text, styling Loom timestamps ([0:10]) and on-screen cues ([show: ...]).
-function FormattedText({ text }: { text: string }) {
-  return (
-    <div className="space-y-3 text-[15px] leading-7 text-zinc-800 dark:text-zinc-200">
-      {text.split(/\n{2,}/).map((block, i) => (
-        <p key={i} className="whitespace-pre-wrap">
-          {block.split(/(\[[^\]]+\])/g).map((part, j) => {
-            if (/^\[\d+:\d{2}\]$/.test(part)) {
-              return (
-                <span
-                  key={j}
-                  className="mr-1 inline-flex rounded-md bg-zinc-900/[0.06] px-1.5 py-0.5 font-mono text-xs font-medium text-zinc-700 dark:bg-white/10 dark:text-zinc-200"
-                >
-                  {part.slice(1, -1)}
-                </span>
-              );
-            }
-            if (/^\[show:/i.test(part)) {
-              return (
-                <span
-                  key={j}
-                  className="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[13px] text-amber-700 dark:text-amber-300"
-                >
-                  {part.slice(1, -1)}
-                </span>
-              );
-            }
-            return part;
-          })}
-        </p>
-      ))}
-    </div>
-  );
-}
-
-function Skeleton() {
-  return (
-    <div className="flex flex-col gap-3 pt-1">
-      {[100, 94, 88, 100, 76, 92, 60].map((w, i) => (
-        <div
-          key={i}
-          className="h-3 animate-shimmer rounded-full bg-linear-to-r from-zinc-200 via-zinc-100 to-zinc-200 bg-[length:200%_100%] dark:from-white/[0.06] dark:via-white/15 dark:to-white/[0.06]"
-          style={{ width: `${w}%` }}
-        />
-      ))}
-    </div>
-  );
-}
-
-export default function Home() {
-  const fileInput = useRef<HTMLInputElement>(null);
-  const [resume, setResume] = useState<ResumeInfo | null>(null);
-  const [resumeStatus, setResumeStatus] = useState("Loading resume…");
-  const [resumeError, setResumeError] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [dragging, setDragging] = useState(false);
-
-  const [jd, setJD] = useState("");
-  const [notes, setNotes] = useState("");
-  const [wanted, setWanted] = useState<Record<OutputType, boolean>>({
-    proposal: true,
-    loom: true,
-  });
-  const [outputs, setOutputs] = useState<Record<OutputType, Output>>({
-    proposal: EMPTY_OUTPUT,
-    loom: EMPTY_OUTPUT,
-  });
-  const [copied, setCopied] = useState<OutputType | null>(null);
-
-  useEffect(() => {
-    fetch("/api/resume")
-      .then(readJson)
-      .then((data) => {
-        setResume(data.resume);
-        setResumeStatus(data.resume ? "" : "No resume yet");
-      })
-      .catch((e: Error) => {
-        setResumeError(true);
-        setResumeStatus(e.message);
-      });
-  }, []);
-
-  const uploadFile = async (file: File) => {
-    setUploading(true);
-    setResumeError(false);
-    setResumeStatus("Reading your PDF…");
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const data = await readJson(
-        await fetch("/api/upload", { method: "POST", body: formData }),
-      );
-      setResume({ id: data.id, preview: data.preview });
-      setResumeStatus("");
-    } catch (e) {
-      setResumeError(true);
-      setResumeStatus((e as Error).message);
-    } finally {
-      setUploading(false);
-      if (fileInput.current) fileInput.current.value = "";
-    }
-  };
-
-  const generate = async (type: OutputType) => {
-    if (!resume) return;
-    setOutputs((o) => ({
-      ...o,
-      [type]: { ...o[type], loading: true, error: "" },
-    }));
-    try {
-      const data = await readJson(
-        await fetch("/api/proposal", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ jd, notes, resumeId: resume.id, type }),
-        }),
-      );
-      setOutputs((o) => ({
-        ...o,
-        [type]: { text: data.text, loading: false, error: "" },
-      }));
-    } catch (e) {
-      setOutputs((o) => ({
-        ...o,
-        [type]: { ...o[type], loading: false, error: (e as Error).message },
-      }));
-    }
-  };
-
-  const anyLoading = outputs.proposal.loading || outputs.loom.loading;
-  const canGenerate =
-    !!resume && !!jd.trim() && (wanted.proposal || wanted.loom) && !anyLoading;
-
-  const generateAll = () => {
-    if (!canGenerate) return;
-    TYPES.filter((t) => wanted[t]).forEach(generate);
-  };
-
-  const copy = async (type: OutputType) => {
-    await navigator.clipboard.writeText(outputs[type].text);
-    setCopied(type);
-    setTimeout(() => setCopied(null), 1500);
-  };
-
-  const visible = TYPES.filter(
-    (t) => outputs[t].text || outputs[t].loading || outputs[t].error,
-  );
+export default async function Landing() {
+  const user = await getUser(await createClient());
+  const ctaHref = user ? "/app" : "/login";
+  const ctaLabel = user ? "Open Pitchr" : "Get started free";
 
   return (
     <div className="flex flex-1 flex-col">
-      <nav className="sticky top-0 z-20 border-b border-zinc-200/80 bg-background/80 backdrop-blur-xl dark:border-white/[0.08]">
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-5">
-          <span className="text-lg font-semibold tracking-[-0.03em]">
+      <SiteNav>
+        {user ? (
+          <Link href="/app" className={navPrimary}>
+            Open app
+          </Link>
+        ) : (
+          <Link href="/login" className={navGhost}>
+            Sign in
+          </Link>
+        )}
+      </SiteNav>
+
+      <main className="flex-1">
+        {/* Hero */}
+        <section className="relative overflow-hidden px-5 pt-20 pb-16 sm:pt-28">
+          <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(rgba(0,0,0,0.06)_1px,transparent_1px)] [background-size:24px_24px] [mask-image:radial-gradient(ellipse_at_top,black_10%,transparent_65%)] dark:bg-[radial-gradient(rgba(255,255,255,0.06)_1px,transparent_1px)]" />
+          <div className="mx-auto max-w-4xl animate-fade-up text-center">
+            <p className="mx-auto mb-6 inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white/70 px-3 py-1 text-xs font-medium text-zinc-600 dark:border-white/10 dark:bg-white/5 dark:text-zinc-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              For Upwork freelancers
+            </p>
+            <h1 className="text-5xl font-semibold tracking-[-0.045em] text-balance sm:text-7xl">
+              Win the client in the first line.
+            </h1>
+            <p className="mx-auto mt-6 max-w-2xl text-lg text-balance text-zinc-600 sm:text-xl dark:text-zinc-400">
+              Pitchr turns a job post and your resume into a proposal that gets
+              straight to the point, plus a Loom script to go with it.
+            </p>
+            <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <Link
+                href={ctaHref}
+                className="inline-flex h-12 items-center gap-2 rounded-full bg-zinc-950 px-7 text-[15px] font-medium text-white shadow-sm transition hover:bg-zinc-800 active:scale-[0.98] dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200"
+              >
+                <SparkIcon width={16} height={16} />
+                {ctaLabel}
+              </Link>
+              <a
+                href="#how"
+                className="inline-flex h-12 items-center rounded-full px-6 text-[15px] font-medium text-zinc-600 transition hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white"
+              >
+                See how it works
+              </a>
+            </div>
+          </div>
+
+          {/* Product preview */}
+          <div
+            className="mx-auto mt-16 max-w-5xl animate-fade-up"
+            style={{ animationDelay: "120ms" }}
+          >
+            <div className={`${card} overflow-hidden p-2`}>
+              <div className="flex items-center gap-1.5 px-3 py-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-zinc-300 dark:bg-white/15" />
+                <span className="h-2.5 w-2.5 rounded-full bg-zinc-300 dark:bg-white/15" />
+                <span className="h-2.5 w-2.5 rounded-full bg-zinc-300 dark:bg-white/15" />
+              </div>
+              <div className="grid gap-2 md:grid-cols-[2fr_3fr]">
+                <div className="rounded-[20px] bg-zinc-50 p-6 dark:bg-white/[0.03]">
+                  <p className="text-xs font-medium tracking-wide text-zinc-500 uppercase">
+                    Job post
+                  </p>
+                  <p className="mt-3 text-[15px] leading-7 text-zinc-700 dark:text-zinc-300">
+                    We have a React + Supabase MVP for booking yoga classes.
+                    Users sometimes get double-booked and the admin dashboard is
+                    slow with 10k+ bookings. Need someone to fix the bugs and
+                    improve performance.
+                  </p>
+                </div>
+                <div className="rounded-[20px] border border-zinc-200/80 bg-white p-6 dark:border-white/[0.08] dark:bg-black/30">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium tracking-wide text-zinc-500 uppercase">
+                      Proposal
+                    </p>
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 px-2.5 py-1 text-xs text-zinc-600 dark:border-white/10 dark:text-zinc-400">
+                      <CopyIcon width={12} height={12} />
+                      Copy
+                    </span>
+                  </div>
+                  <p className="mt-3 text-[15px] leading-7 text-zinc-900 dark:text-zinc-100">
+                    Double-bookings in a Supabase app almost always come from
+                    checking availability on the client and then inserting, so
+                    two users can pass the check at the same time. The fix is a
+                    database-level guard, like a unique constraint or a Postgres
+                    function that checks capacity and inserts in one
+                    transaction.
+                  </p>
+                  <div className="mt-4 space-y-2">
+                    <div className="h-2.5 w-full rounded-full bg-zinc-100 dark:bg-white/[0.06]" />
+                    <div className="h-2.5 w-11/12 rounded-full bg-zinc-100 dark:bg-white/[0.06]" />
+                    <div className="h-2.5 w-3/4 rounded-full bg-zinc-100 dark:bg-white/[0.06]" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Before / after */}
+        <section className="px-5 py-14">
+          <div className="mx-auto max-w-5xl">
+            <div className="max-w-2xl">
+              <h2 className="text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">
+                Clients decide in about 200 characters.
+              </h2>
+              <p className="mt-4 text-lg text-zinc-600 dark:text-zinc-400">
+                That&apos;s all Upwork shows in the applicant list. Most
+                proposals spend it on a greeting. Pitchr spends it on the
+                client&apos;s problem.
+              </p>
+            </div>
+            <div className="mt-10 grid gap-4 md:grid-cols-2">
+              <div className={`${card} p-6`}>
+                <p className="text-xs font-medium tracking-wide text-zinc-400 uppercase">
+                  Typical opener
+                </p>
+                <p className="mt-4 text-[15px] leading-7 text-zinc-400 line-through decoration-zinc-300 dark:decoration-zinc-600">
+                  Dear Hiring Manager, I hope this finds you well. I am thrilled
+                  to apply for this position. As a passionate full-stack
+                  developer with 5 years of experience…
+                </p>
+              </div>
+              <div className={`${card} p-6`}>
+                <p className="text-xs font-medium tracking-wide text-emerald-600 uppercase dark:text-emerald-400">
+                  Pitchr opener
+                </p>
+                <p className="mt-4 text-[15px] leading-7">
+                  6+ second mobile loads on a headless Shopify storefront
+                  usually come from client-side data fetching and unoptimized
+                  images. I cut load time 60% for an e-commerce client by fixing
+                  exactly that.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Features */}
+        <section className="px-5 py-14">
+          <div className="mx-auto max-w-5xl">
+            <h2 className="max-w-2xl text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">
+              Everything you need to apply, nothing you don&apos;t.
+            </h2>
+            <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {FEATURES.map(({ Icon, title, body }) => (
+                <div key={title} className={`${card} p-6`}>
+                  <span className="grid h-10 w-10 place-items-center rounded-2xl bg-zinc-100 text-zinc-800 dark:bg-white/[0.06] dark:text-zinc-200">
+                    <Icon width={18} height={18} />
+                  </span>
+                  <h3 className="mt-5 font-semibold tracking-tight">{title}</h3>
+                  <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+                    {body}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* How it works */}
+        <section id="how" className="scroll-mt-20 px-5 py-14">
+          <div className="mx-auto max-w-5xl">
+            <h2 className="text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">
+              How it works
+            </h2>
+            <div className="mt-10 grid gap-8 md:grid-cols-3">
+              {STEPS.map((s) => (
+                <div
+                  key={s.n}
+                  className="border-t border-zinc-200 pt-6 dark:border-white/10"
+                >
+                  <p className="font-mono text-sm text-zinc-400">{s.n}</p>
+                  <h3 className="mt-3 text-lg font-semibold tracking-tight">
+                    {s.title}
+                  </h3>
+                  <p className="mt-2 text-zinc-600 dark:text-zinc-400">
+                    {s.body}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Final CTA */}
+        <section className="px-5 py-14">
+          <div className="mx-auto max-w-5xl rounded-[32px] bg-zinc-950 px-8 py-16 text-center text-white sm:py-20 dark:bg-white dark:text-zinc-950">
+            <h2 className="text-3xl font-semibold tracking-[-0.03em] text-balance sm:text-5xl">
+              Your next proposal takes 30 seconds.
+            </h2>
+            <Link
+              href={ctaHref}
+              className="mt-8 inline-flex h-12 items-center gap-2 rounded-full bg-white px-7 text-[15px] font-medium text-zinc-950 transition hover:bg-zinc-200 active:scale-[0.98] dark:bg-zinc-950 dark:text-white dark:hover:bg-zinc-800"
+            >
+              {ctaLabel}
+            </Link>
+          </div>
+        </section>
+      </main>
+
+      <footer className="border-t border-zinc-200/80 px-5 py-8 dark:border-white/[0.08]">
+        <div className="mx-auto flex max-w-5xl items-center justify-between text-sm text-zinc-500">
+          <span className="font-semibold tracking-[-0.03em] text-zinc-900 dark:text-zinc-100">
             Pitchr
           </span>
-          <ThemeToggle />
+          <span>Proposals that get opened.</span>
         </div>
-      </nav>
-
-      <main className="mx-auto w-full max-w-6xl flex-1 px-5 pt-8 pb-24">
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
-          {/* Input column */}
-          <div
-            className="animate-fade-up flex flex-col gap-6 lg:sticky lg:top-24"
-            style={{ animationDelay: "80ms" }}
-          >
-            <section className={`${card} p-2`}>
-              <div
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setDragging(true);
-                }}
-                onDragLeave={() => setDragging(false)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setDragging(false);
-                  const file = e.dataTransfer.files?.[0];
-                  if (file) uploadFile(file);
-                }}
-                className={`flex items-center gap-4 rounded-[20px] border border-dashed p-4 transition ${
-                  dragging
-                    ? "border-zinc-400 bg-zinc-900/[0.03] dark:border-white/30 dark:bg-white/5"
-                    : "border-transparent"
-                }`}
-              >
-                <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-zinc-100 text-zinc-600 dark:bg-white/5 dark:text-zinc-300">
-                  <FileIcon width={20} height={20} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    {resume ? `Resume #${resume.id}` : "Your resume"}
-                    {resume && !resumeStatus && (
-                      <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-                        Active
-                      </span>
-                    )}
-                  </div>
-                  <p
-                    className={`truncate text-xs ${
-                      resumeError
-                        ? "text-red-600 dark:text-red-400"
-                        : "text-zinc-500"
-                    }`}
-                  >
-                    {resumeStatus ||
-                      resume?.preview.replace(/\s+/g, " ") ||
-                      "Drop a PDF here"}
-                  </p>
-                </div>
-                <button
-                  className={ghostBtn}
-                  disabled={uploading}
-                  onClick={() => fileInput.current?.click()}
-                >
-                  <UploadIcon width={13} height={13} />
-                  {uploading ? "Uploading…" : resume ? "Replace" : "Upload"}
-                </button>
-                <input
-                  ref={fileInput}
-                  type="file"
-                  accept="application/pdf"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) uploadFile(file);
-                  }}
-                />
-              </div>
-            </section>
-
-            <section className={`${card} flex flex-col gap-5 p-6`}>
-              <div>
-                <div className="mb-2 flex items-baseline justify-between">
-                  <label htmlFor="jd" className="text-sm font-medium">
-                    Job post
-                  </label>
-                  <span className="text-xs text-zinc-400">
-                    {wordCount(jd)} words
-                  </span>
-                </div>
-                <textarea
-                  id="jd"
-                  className={`${field} min-h-64 resize-y`}
-                  placeholder="Paste the full Upwork job description…"
-                  value={jd}
-                  onChange={(e) => setJD(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                      e.preventDefault();
-                      generateAll();
-                    }
-                  }}
-                />
-              </div>
-              <div>
-                <label
-                  htmlFor="notes"
-                  className="mb-2 block text-sm font-medium"
-                >
-                  Notes{" "}
-                  <span className="font-normal text-zinc-400">optional</span>
-                </label>
-                <input
-                  id="notes"
-                  className={field}
-                  placeholder="Client name, rate, portfolio links…"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                {TYPES.map((t) => {
-                  const { label, hint, Icon } = OUTPUTS[t];
-                  const on = wanted[t];
-                  return (
-                    <button
-                      key={t}
-                      type="button"
-                      aria-pressed={on}
-                      onClick={() => setWanted((w) => ({ ...w, [t]: !w[t] }))}
-                      className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition active:scale-[0.98] ${
-                        on
-                          ? "border-zinc-900 bg-zinc-900/[0.03] dark:border-white/60 dark:bg-white/[0.04]"
-                          : "border-zinc-200 opacity-60 hover:opacity-100 dark:border-white/10"
-                      }`}
-                    >
-                      <span
-                        className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl transition ${
-                          on
-                            ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
-                            : "bg-zinc-100 text-zinc-500 dark:bg-white/5"
-                        }`}
-                      >
-                        <Icon width={15} height={15} />
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block text-sm font-medium">
-                          {label}
-                        </span>
-                        <span className="block truncate text-xs text-zinc-500">
-                          {hint}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <button
-                onClick={generateAll}
-                disabled={!canGenerate}
-                className="relative inline-flex h-12 items-center justify-center gap-2 overflow-hidden rounded-full bg-zinc-950 px-6 text-[15px] font-medium text-white shadow-sm transition hover:bg-zinc-800 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-40 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200"
-              >
-                <span className="relative flex items-center gap-2">
-                  <SparkIcon width={16} height={16} />
-                  {anyLoading ? "Writing…" : "Generate"}
-                  {!anyLoading && (
-                    <kbd className="ml-1 rounded-md border border-white/20 px-1.5 font-sans text-[11px] opacity-60 dark:border-black/20">
-                      ⌘↵
-                    </kbd>
-                  )}
-                </span>
-              </button>
-              {!resume && !resumeStatus.startsWith("Loading") && (
-                <p className="-mt-2 text-center text-xs text-zinc-500">
-                  Upload your resume to get started.
-                </p>
-              )}
-            </section>
-          </div>
-
-          {/* Output column */}
-          <div
-            className="animate-fade-up flex flex-col gap-6"
-            style={{ animationDelay: "160ms" }}
-          >
-            {visible.length === 0 && (
-              <section
-                className={`${card} grid min-h-[420px] place-items-center p-10 text-center`}
-              >
-                <div>
-                  <div className="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-2xl border border-zinc-200 bg-white text-zinc-700 dark:border-white/10 dark:bg-white/5 dark:text-zinc-300">
-                    <SparkIcon width={24} height={24} />
-                  </div>
-                  <h3 className="text-lg font-semibold tracking-tight">
-                    Your pitch shows up here
-                  </h3>
-                  <p className="mx-auto mt-2 max-w-xs text-sm text-zinc-500">
-                    Paste a job post and hit Generate. Each result can be copied
-                    or regenerated on its own.
-                  </p>
-                </div>
-              </section>
-            )}
-
-            {visible.map((type) => {
-              const out = outputs[type];
-              const { label, Icon } = OUTPUTS[type];
-              const words = wordCount(out.text);
-              return (
-                <section
-                  key={type}
-                  className={`${card} animate-fade-up overflow-hidden`}
-                >
-                  <header className="flex items-center justify-between gap-3 border-b border-zinc-200/70 px-6 py-4 dark:border-white/[0.06]">
-                    <div className="flex items-center gap-3">
-                      <span className="grid h-8 w-8 place-items-center rounded-xl bg-zinc-100 text-zinc-700 dark:bg-white/[0.06] dark:text-zinc-300">
-                        <Icon width={15} height={15} />
-                      </span>
-                      <div>
-                        <h2 className="text-sm font-semibold">{label}</h2>
-                        <p className="text-xs text-zinc-500">
-                          {out.loading
-                            ? "Writing…"
-                            : out.text
-                              ? `${words} words${
-                                  type === "loom"
-                                    ? ` · ~${Math.round((words / 150) * 60)}s spoken`
-                                    : ""
-                                }`
-                              : "Not generated"}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        className={ghostBtn}
-                        disabled={out.loading || !resume || !jd.trim()}
-                        onClick={() => generate(type)}
-                        aria-label={`Regenerate ${label}`}
-                      >
-                        <RefreshIcon
-                          width={13}
-                          height={13}
-                          className={out.loading ? "animate-spin" : ""}
-                        />
-                        <span className="hidden sm:inline">Regenerate</span>
-                      </button>
-                      <button
-                        className={`${ghostBtn} ${
-                          copied === type
-                            ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
-                            : ""
-                        }`}
-                        disabled={!out.text || out.loading}
-                        onClick={() => copy(type)}
-                      >
-                        {copied === type ? (
-                          <CheckIcon width={13} height={13} />
-                        ) : (
-                          <CopyIcon width={13} height={13} />
-                        )}
-                        {copied === type ? "Copied" : "Copy"}
-                      </button>
-                    </div>
-                  </header>
-                  <div className="px-6 py-5">
-                    {out.error && (
-                      <p className="mb-4 rounded-2xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-600 dark:text-red-400">
-                        {out.error}
-                      </p>
-                    )}
-                    {out.loading ? (
-                      <Skeleton />
-                    ) : (
-                      out.text && <FormattedText text={out.text} />
-                    )}
-                  </div>
-                </section>
-              );
-            })}
-          </div>
-        </div>
-      </main>
+      </footer>
     </div>
   );
 }

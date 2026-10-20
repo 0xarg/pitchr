@@ -1,3 +1,4 @@
+import { getUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 import { PDFParse } from "pdf-parse";
@@ -39,9 +40,13 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = await createClient();
+    const user = await getUser(supabase);
+    if (!user) {
+      return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+    }
     const { data, error } = await supabase
       .from("resume")
-      .insert({ text: resumeText })
+      .insert({ text: resumeText, user_id: user.id })
       .select("id")
       .single();
 

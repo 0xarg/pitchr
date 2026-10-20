@@ -1,3 +1,4 @@
+import { getUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { OpenRouter } from "@openrouter/sdk";
 import { NextRequest, NextResponse } from "next/server";
@@ -44,10 +45,15 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = await createClient();
+    const user = await getUser(supabase);
+    if (!user) {
+      return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+    }
     const { data, error } = await supabase
       .from("resume")
       .select("text")
       .eq("id", resumeId)
+      .eq("user_id", user.id)
       .single();
 
     if (error) {
