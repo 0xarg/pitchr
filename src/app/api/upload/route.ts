@@ -51,15 +51,24 @@ export async function POST(req: NextRequest) {
     }
     const { data, error } = await supabase
       .from("resume")
-      .insert({ text: resumeText, user_id: user.id })
+      .insert({
+        text: resumeText,
+        user_id: user.id,
+        file_name: resume.name.slice(0, 120),
+      })
       .select("id")
       .single();
 
     if (error) {
       throw new Error(error.message);
     }
+    // A fresh upload becomes the active resume.
+    await supabase
+      .from("profiles")
+      .upsert({ user_id: user.id, active_resume_id: data.id });
     return NextResponse.json({
       id: data.id,
+      fileName: resume.name,
       preview: resumeText.slice(0, 200),
     });
   } catch (error) {

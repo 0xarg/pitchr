@@ -81,3 +81,42 @@ export const VideoIcon = (p: SVGProps<SVGSVGElement>) => (
     <rect x="2" y="6" width="14" height="12" rx="2" />
   </Icon>
 );
+
+export const LinkIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7.1-7.1l-1.7 1.7" />
+    <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7.1 7.1l1.7-1.7" />
+  </Icon>
+);
+
+export const ChevronIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="m6 9 6 6 6-6" />
+  </Icon>
+);
+
+export const CpuIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <rect x="5" y="5" width="14" height="14" rx="2" />
+    <path d="M9 9h6v6H9zM9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3" />
+  </Icon>
+);
+
+export const TrashIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+  </Icon>
+);
+
+export const PlusIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M12 5v14M5 12h14" />
+  </Icon>
+);
+
+export const CoinIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M14.5 9.5c-.4-.9-1.4-1.5-2.5-1.5-1.5 0-2.5.8-2.5 2s1 1.7 2.5 2 2.5.8 2.5 2-1 2-2.5 2c-1.1 0-2.1-.6-2.5-1.5M12 6.5V8M12 16v1.5" />
+  </Icon>
+);
