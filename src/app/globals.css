@@ -22,6 +22,9 @@
   --font-mono: var(--font-geist-mono);
   --animate-fade-up: fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
   --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-pop-in: pop-in 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-caret: caret 1s steps(1) infinite;
+  --animate-glow: glow 1.8s ease-in-out infinite;
 }
 
 @keyframes fade-up {
@@ -32,6 +35,43 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Soft pulsing ring on a card while it is generating */
+@keyframes glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(120 120 130 / 0);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgb(120 120 130 / 0.12);
   }
 }
 
