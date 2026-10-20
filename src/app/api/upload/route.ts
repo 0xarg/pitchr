@@ -1,7 +1,12 @@
 import { getUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
+// Must load before pdf-parse: polyfills DOMMatrix etc. via @napi-rs/canvas and
+// provides an inlined pdf.js worker, so nothing is missing on Vercel.
+import { CanvasFactory, getData } from "pdf-parse/worker";
 import { PDFParse } from "pdf-parse";
+
+PDFParse.setWorker(getData());
 
 const MAX_SIZE = 5 * 1024 * 1024;
 
@@ -27,7 +32,7 @@ export async function POST(req: NextRequest) {
     }
 
     const buff = Buffer.from(await resume.arrayBuffer());
-    const parser = new PDFParse({ data: buff });
+    const parser = new PDFParse({ data: buff, CanvasFactory });
     const res = await parser.getText();
     await parser.destroy();
     const resumeText = res.text.trim();
